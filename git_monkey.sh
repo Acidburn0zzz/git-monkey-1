@@ -37,10 +37,12 @@ git fetch -a --prune -q
 # Looking for changes in master but not in develop.
 for sha1 in $(git log --format=format:%H --no-merges develop..master); do
   for file_name in $(git show $sha1 --name-only --pretty=format:""); do
-    master_to_develop_files_changed=$master_to_develop_files_changed$file_name"\n"
+    if [[ ! $file_name =~ (^[ \n]*$|^\.npmrc) ]];
+    then
+      master_to_develop_files_changed=$master_to_develop_files_changed$file_name"\n"
+    fi
   done
 done
-master_to_develop_files_changed=$(echo -e $master_to_develop_files_changed | grep -vE "^[ \n]*$|^\.npmrc")
 
 
 # Looking for merged feature branches.
@@ -67,7 +69,9 @@ fi
 if [[ ! -z "$master_to_develop_files_changed" ]];
 then
   echo "The following files were changed in master but not in develop:"
-  echo -e $master_to_develop_files_changed
+  for file_name in $(echo -e $master_to_develop_files_changed | sort | uniq); do
+    echo $file_name
+  done
   echo ""
   exit_status=1
 else
