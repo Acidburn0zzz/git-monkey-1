@@ -5,6 +5,7 @@ set -e
 master_to_develop_files_changed=""
 merged_feature_branches=""
 
+exit_status=0
 repo_path=$1
 
 git_monkey_ascii_art=$(dirname "$0")"/git_monkey.txt"
@@ -30,6 +31,9 @@ git pull origin develop -q >> /dev/null
 git checkout master -q
 git pull origin master -q >> /dev/null
 
+git fetch -a --prune -q
+
+
 # Looking for changes in master but not in develop.
 for sha1 in $(git log --format=format:%H --no-merges develop..master); do
   for file_name in $(git show $sha1 --name-only --pretty=format:""); do
@@ -39,27 +43,46 @@ done
 master_to_develop_files_changed=$(echo -e $master_to_develop_files_changed | grep -vE "^[ \n]*$|^\.npmrc")
 
 
-git fetch -a --prune -q
-
+# Looking for merged feature branches.
 branches=$(git branch --list --remotes | tail -n +2)
 for branch in $branches; do
   if [[ $branch =~ ^origin/feature* ]];
   then
     unmerged_commits=$(git log $branch..develop)
-    if [[ -z unmerged_commits ]];
+    if [[ -z "$unmerged_commits" ]];
     then
-      echo "The feature branch "$branch" has been merged in develop and should be deleted."
+      merged_feature_branches=$merged_feature_branches$branch"\n"
     fi
   fi
 done
 
-git checkout $current_branch-q
 
+git checkout $current_branch -q
 if [ "$stash_content" != "No local changes to save" ]
 then
   git stash pop -q
 fi
 
-echo -e $master_to_develop_files_changed
+
+if [[ ! -z "$master_to_develop_files_changed" ]];
+then
+  echo "The following files were changed in master but not in develop:"
+  echo -e $master_to_develop_files_changed
+  echo ""
+  exit_status=1
+else
+  echo "No changes in master that are not in develop."
+fi
+
+if [[ ! -z "$merged_feature_branches" ]];
+then
+  echo "The following feature branches are no longer needed:"
+  echo -e $merged_feature_branches
+  echo ""
+  exit_status=1
+else
+  echo "No merged feature branches remaining."
+fi
 
 popd >> /dev/null
+exit $exit_status
