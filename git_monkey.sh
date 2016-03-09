@@ -1,9 +1,8 @@
 #!/bin/bash
 set -e
 
-# Result variables.
-master_to_develop_files_changed=""
-merged_feature_branches=""
+#Libraries that should always be on the latest version.
+LIBRARIES="connectors ucommon"
 
 exit_status=0
 repo_path=$1
@@ -92,7 +91,7 @@ check_master_develop_changes () {
     for file_name in $(git show $sha1 --name-only --pretty=format:""); do
       if [[ ! $file_name =~ (^[ \n]*$|^package.json) ]];
       then
-        files_changed=$master_to_develop_files_changed$file_name"\n"
+        files_changed=$files_changed$file_name"\n"
       fi
     done
 
@@ -149,10 +148,33 @@ check_outdated_feature_branches () {
 
 }
 
+# Make sure that the versions of the libraries
+# on develop are the latest versions available.
+check_libraries_versions () {
+
+  echo ""
+  echo -e "$unicode_monkey Verifying the versions of the libraries"
+
+  git checkout develop >> /dev/null 2> /dev/null
+
+  ncu --upgrade ucommon connectors >> /dev/null 2> /dev/null
+
+  if ! no_changes;
+  then
+    echo "Libraries are not at the latest versions on develop!"
+    git checkout . >> /dev/null 2> /dev/null
+    exit_status=1
+  else
+    echo "All libraries are at the latest versions!"
+  fi
+
+}
+
 update_branches
 check_major_minor
 check_master_develop_changes
 check_outdated_feature_branches
+check_libraries_versions
 
 popd >> /dev/null
 exit $exit_status
