@@ -8,11 +8,9 @@ merged_feature_branches=""
 exit_status=0
 repo_path=$1
 
-git_monkey_ascii_art=$(dirname "$0")"/git_monkey.txt"
-if [[ -a $git_monkey_ascii_art ]];
-then
-  cat $git_monkey_ascii_art
-fi
+unicode_monkey="\U0001F435 "
+
+echo -e "$unicode_monkey Git Monkey \u2122"
 
 if [[ -z "$repo_path" ]];
 then
@@ -22,71 +20,139 @@ fi
 
 pushd $repo_path >> /dev/null
 
-stash_content=$(git stash)
-current_branch=$(git rev-parse --abbrev-ref HEAD)
+no_changes () {
+  git diff-index --quiet --cached HEAD --ignore-submodules -- &&
+  git diff-files --quiet --ignore-submodules
+}
 
-git checkout develop -q
-git pull origin develop -q >> /dev/null
+if ! no_changes;
+then
+  popd >> /dev/null
+  echo "Please make sure your git environment is clean."
+  exit 1
+fi
 
-git checkout master -q
-git pull origin master -q >> /dev/null
+# Make sure we have to correct, up-to-date versions
+# of the main branches, and a reference to all
+# the available tags.
+update_branches () {
 
-git fetch -a --prune -q
+  git checkout develop -q >> /dev/null 2> /dev/null
+  git pull origin develop -q >> /dev/null 2> /dev/null
 
+  git checkout master -q >> /dev/null 2> /dev/null
+  git pull origin master -q >> /dev/null 2> /dev/null
 
-# Looking for changes in master but not in develop.
-for sha1 in $(git log --format=format:%H --no-merges develop..master); do
-  for file_name in $(git show $sha1 --name-only --pretty=format:""); do
-    if [[ ! $file_name =~ (^[ \n]*$|^\.npmrc) ]];
-    then
-      master_to_develop_files_changed=$master_to_develop_files_changed$file_name"\n"
-    fi
-  done
-done
+  git fetch -a --tags --prune -q >> /dev/null 2> /dev/null
 
+}
 
-# Looking for merged feature branches.
-branches=$(git branch --list --remotes | tail -n +2)
-for branch in $branches; do
-  if [[ $branch =~ ^origin/feature* ]];
+# Verifies that master and develop don't
+# have the same major and minor version.
+check_major_minor () {
+
+  git checkout develop >> /dev/null 2> /dev/null
+  develop_version=$(git describe --tags)
+  git checkout master >> /dev/null 2> /dev/null
+  master_version=$(git describe --tags)
+
+  develop_major_minor=$(echo $develop_version | grep -Eo "(v[0-9]+\.[0-9]+)") 
+  master_major_minor=$(echo $master_version | grep -Eo "(v[0-9]+\.[0-9]+)") 
+
+  echo ""
+  echo -e "$unicode_monkey Validating master and develop versions"
+  if [[ "$develop_major_minor" == "$master_major_minor" ]];
   then
-    unmerged_commits=$(git log $branch..develop)
-    if [[ -z "$unmerged_commits" ]];
-    then
-      merged_feature_branches=$merged_feature_branches$branch"\n"
-    fi
+    echo "master and develop are on the same major.minor version!"
+    echo "master version : $master_version"
+    echo "develop version : $develop_version"
+    exit_status=1
+  else
+    echo "master and develop are not on same major.minor version."
+    echo "master version : $master_version"
+    echo "develop version : $develop_version"
   fi
-done
 
+}
 
-git checkout $current_branch -q
-if [ "$stash_content" != "No local changes to save" ]
-then
-  git stash pop -q
-fi
+# Checks if other files than package.json have been modified
+# on master and not on develop.
+check_master_develop_changes () {
 
+  has_unported_changes=0
 
-if [[ ! -z "$master_to_develop_files_changed" ]];
-then
-  echo "The following files were changed in master but not in develop:"
-  for file_name in $(echo -e $master_to_develop_files_changed | sort | uniq); do
-    echo $file_name
+  echo ""
+  echo -e "$unicode_monkey Validating changes in master not in develop"
+
+  commits_master_not_develop=$(git log --format=format:%H --no-merges develop..master)
+
+  for sha1 in $commits_master_not_develop; do
+
+    files_changed=""
+    for file_name in $(git show $sha1 --name-only --pretty=format:""); do
+      if [[ ! $file_name =~ (^[ \n]*$|^package.json) ]];
+      then
+        files_changed=$master_to_develop_files_changed$file_name"\n"
+      fi
+    done
+
+    if [[ ! -z "$files_changed" ]];
+    then
+
+      has_unported_changes=1
+
+      echo "Commit $sha1 should be merged into develop."
+      echo -e $files_changed
+
+    fi
+
   done
-  echo ""
-  exit_status=1
-else
-  echo "No changes in master that are not in develop."
-fi
 
-if [[ ! -z "$merged_feature_branches" ]];
-then
-  echo "The following feature branches are no longer needed:"
-  echo -e $merged_feature_branches
+  if ! [ "$has_unported_changes" -eq "0" ];
+  then
+    exit_status=$has_unported_changes
+  else
+    echo "No changes in master not in develop."
+  fi
+
+}
+
+# Verifies the prensence of outdated (merged)
+# feature branches.
+check_outdated_feature_branches () {
+
+  has_outdated_branches=0
+
   echo ""
-  exit_status=1
-else
-  echo "No merged feature branches remaining."
-fi
+  echo -e "$unicode_monkey Verifying outdated feature branches"
+
+  branches=$(git branch --list --remotes | tail -n +2)
+
+  for branch in $branches; do
+    if [[ $branch =~ ^origin/feature* ]];
+    then
+      unmerged_commits=$(git log $branch..develop)
+      if [[ -z "$unmerged_commits" ]];
+      then
+        echo "Branch $branch has been merged into develop already."
+        has_outdated_branches=1
+      fi
+    fi
+  done
+
+  if ! [ "$has_outdated_branches" -eq "0" ];
+  then
+    exit_status=$has_outdated_branches
+  else
+    echo "No unmerged feature branches."
+  fi
+
+}
+
+update_branches
+check_major_minor
+check_master_develop_changes
+check_outdated_feature_branches
 
 popd >> /dev/null
 exit $exit_status
