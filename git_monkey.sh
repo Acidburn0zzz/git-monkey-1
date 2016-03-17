@@ -7,9 +7,10 @@ LIBRARIES="connectors ucommon"
 exit_status=0
 repo_path=$1
 
-unicode_monkey="\U0001F435 "
+unicode_monkey="\xf0\x9f\x90\xb5 "
+trademark="\xe2\x84\xa2"
 
-echo -e "$unicode_monkey Git Monkey \u2122"
+echo -e "$unicode_monkey Git Monkey $trademark"
 
 if [[ -z "$repo_path" ]];
 then
@@ -55,8 +56,8 @@ check_major_minor () {
   git checkout master >> /dev/null 2> /dev/null
   master_version=$(git describe --tags)
 
-  develop_major_minor=$(echo $develop_version | grep -Eo "(v[0-9]+\.[0-9]+)") 
-  master_major_minor=$(echo $master_version | grep -Eo "(v[0-9]+\.[0-9]+)") 
+  develop_major_minor=$(echo $develop_version | grep -Eo "(v[0-9]+\.[0-9]+)")
+  master_major_minor=$(echo $master_version | grep -Eo "(v[0-9]+\.[0-9]+)")
 
   echo ""
   echo -e "$unicode_monkey Validating master and develop versions"
